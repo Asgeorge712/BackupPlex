@@ -11,3 +11,10 @@ Backups/
 
 # Downloaded PowerShell modules
 Modules/
+
+# Personal notes that may contain passwords
+gmail.txt
+GMail-Cred-Notes.txt
+
+# Stray archives (e.g. from the Compress-Archive quoting bug)
+*.zip
