@@ -3371,7 +3371,7 @@ function CompressFiles {
                         # Use the default compression.
                         if (!$Script:Test) {
                             Get-ChildItem -Path $Script:PlexAppDataDir -File | `
-                                Compress-Archive -DestinationPath '$zipFilePath' -Update
+                                Compress-Archive -DestinationPath $zipFilePath -Update
                         }
                     }
                 }
