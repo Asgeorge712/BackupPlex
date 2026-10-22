@@ -3969,7 +3969,7 @@ function Restore {
                 RestoreSpecialFolders `
                     $Script:SpecialDirs `
                     $Script:PlexAppDataDir `
-                    (Join-Path $Script:BackupDir $subDirSpecial)
+                    (Join-Path $Script:BackupDir $SUBDIR_SPECIAL)
             }
             catch {
                 throw (New-Object System.Exception( `
