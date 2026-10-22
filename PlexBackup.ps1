@@ -160,6 +160,9 @@ The number of retries on failed copy operations (corresponds to the Robocopy /R 
 .PARAMETER RetryWaitSec
 Specifies the wait time between retries in seconds (corresponds to the Robocopy /W switch).
 
+.PARAMETER StopTimeoutSec
+How many seconds to wait for Plex Media Server and its helper processes to close gracefully before forcing them to stop. Default: 60.
+
 .PARAMETER RawOutput
 Set this switch to display raw output from the external commands, such as Robocopy or 7-zip.
 
@@ -447,6 +450,10 @@ param (
     [ValidateRange(0,[int]::MaxValue)]
     [int]
     $RetryWaitSec = 10,
+
+    [ValidateRange(1,[int]::MaxValue)]
+    [int]
+    $StopTimeoutSec = 60,
 
     [switch]
     $RawOutput,
@@ -2153,25 +2160,6 @@ function SavePlexVersion {
 
 
 #---------------------------------------------------------------------------
-# Stop-PlexMediaServer
-# Stop the Plex Media Server Process
-function Stop-PlexMediaServer {
-    $process = Get-Process -Name "Plex Media Server" -ErrorAction SilentlyContinue
-    if ($process) {
-        try {
-            Stop-Process -Id $process.Id -Force -ErrorAction Stop
-            return $true
-        } catch {
-            Write-Host "Failed to stop Plex Media Server: $_"
-            return $false
-        }
-    } else {
-        Write-Host "Plex Media Server is not running."
-        return $false
-    }
-}
-
-#---------------------------------------------------------------------------
 # Start-PlexMediaServer
 # Start the Plex Media Server Process
 function Start-PlexMediaServer {
@@ -2288,8 +2276,44 @@ function StartPlexServices {
 
 
 #--------------------------------------------------------------------------
+# GetPlexProcesses
+#   Returns all running processes started from the Plex Media Server
+#   install folder (the server itself plus helpers such as Plex Media
+#   Scanner, Plex Transcoder, and Plex Tuner Service).
+function GetPlexProcesses {
+    param (
+        [string]
+        $installDir
+    )
+
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $prefix = $installDir.TrimEnd($separator) + $separator
+
+    return @(Get-Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Path -and
+            $_.Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+        })
+}
+
+#--------------------------------------------------------------------------
+# FormatProcessList
+#   Formats a list of processes as "Name (PID n), ..." for logging.
+function FormatProcessList {
+    param (
+        [object[]]
+        $processes
+    )
+
+    return (($processes | ForEach-Object { "$($_.Name) (PID $($_.Id))" }) -join ", ")
+}
+
+#--------------------------------------------------------------------------
 # StopPlexMediaServer
-#   Stops a running instance of Plex Media Server.
+#   Stops a running instance of Plex Media Server: asks it to close
+#   gracefully, waits for all Plex processes to exit, forces any stragglers
+#   to stop as a last resort, and throws if anything is still running
+#   (so we never back up or restore a database that is in use).
 function StopPlexMediaServer {
     [CmdletBinding()]
     param (
@@ -2297,51 +2321,111 @@ function StopPlexMediaServer {
     WriteDebug "Entered StopPlexMediaServer."
 
     try {
-        # If we have the path to Plex Media Server executable, see if it's running.
-        if ($Script:PlexServerPath) {
-            $exeFileName = Get-Process |
-                Where-Object {$_.Path -eq $Script:PlexServerPath } |
-                    Select-Object -ExpandProperty Name
+        if (!$Script:PlexServerPath) {
+            Write-LogInfo "Plex Media Server path is unknown (Plex is not running), so there is nothing to stop."
+            return
+        }
 
-            # Stop Plex Media Server executable (if it is running).
-            if ($exeFileName) {
-                Write-LogInfo "Stopping Plex Media Server process:"
-                Write-LogInfo $Script:PlexServerFileName -Indent 1
+        $installDir = Split-Path -Path $Script:PlexServerPath -Parent
+        $running = @(GetPlexProcesses $installDir)
 
-                try {
-                    # First, let's try to close Plex gracefully.
-                    Write-Verbose "Trying to stop Plex Media Server process gracefully."
-                    taskkill /im $Script:PlexServerFileName >$nul 2>&1
+        if ($running.Count -eq 0) {
+            Write-LogInfo "Plex Media Server is not running."
+            return
+        }
 
-                    $timeoutSeconds = 60
+        Write-LogInfo "Stopping Plex Media Server. Running Plex processes:"
+        foreach ($process in $running) {
+            Write-LogInfo "$($process.Name) (PID $($process.Id))" -Indent 1
+        }
 
-                    # Keep checking to see if Plex is not longer running for at most 60 seconds.
-                    Write-Verbose "Checking if Plex Media Server process stopped gracefully."
-                    do {
-                        # Sleep for a second.
-                        Start-Sleep -Seconds 1
-                        $timeoutSeconds--
+        # Ask Plex to close gracefully (taskkill without /f sends a close request).
+        # Run it through cmd so taskkill's error output cannot trigger a
+        # PowerShell terminating error.
+        Write-LogInfo "Asking Plex Media Server to close (waiting up to $($Script:StopTimeoutSec) seconds)."
+        $output = cmd /c "taskkill /im `"$Script:PlexServerFileName`" 2>&1"
+        $taskkillExitCode = $LASTEXITCODE
+        $output = ($output | Out-String).Trim()
 
-                    } while (($timeoutSeconds -gt 0) -and
-                        (Get-Process -ErrorAction SilentlyContinue |
-                            Where-Object {$_.Path -match $Script:PlexServerFileName + "$" }))
+        # Wait for every Plex process to exit, reporting progress every 10 seconds.
+        $elapsed    = 0
+        $nextReport = 10
+        $waitSec    = $Script:StopTimeoutSec
 
-                    # If Plex is still running, kill it along with all child processes forcefully.
-                    if (Get-Process -ErrorAction SilentlyContinue |
-                            Where-Object {$_.Path -match $Script:PlexServerFileName + "$" }) {
+        if ($taskkillExitCode -eq 0) {
+            if ($output) {
+                Write-LogInfo $output -Indent 1
+            }
+        } else {
+            # Typically "This process can only be terminated forcefully": Plex has
+            # no window this session can reach (e.g. the script runs as a scheduled
+            # task in a different session than the one Plex runs in), so there is
+            # no point waiting for a graceful close.
+            Write-LogWarning "Plex refused the close request (taskkill exit code $taskkillExitCode):"
+            if ($output) {
+                Write-LogWarning $output -Indent 1
+            }
+            $waitSec = 0
+        }
 
-                        Write-Verbose "Failed to stop Plex Media Server process gracefully."
-                        Write-Verbose "Killing Plex Media Server process."
+        while ($elapsed -lt $waitSec) {
+            Start-Sleep -Seconds 1
+            $elapsed++
 
-                        taskkill /f /im $Script:PlexServerFileName /t >$nul 2>&1
-                    }
-                }
-                catch {
-                    throw (New-Object System.Exception( `
-                        "Error stopping Plex Media Server.", $_.Exception))
-                }
+            $running = @(GetPlexProcesses $installDir)
+
+            if ($running.Count -eq 0) {
+                break
+            }
+
+            if ($elapsed -ge $nextReport) {
+                Write-LogInfo "Still waiting after $elapsed seconds for: $(FormatProcessList $running)" -Indent 1
+                $nextReport += 10
             }
         }
+
+        if ($running.Count -eq 0) {
+            Write-LogInfo "All Plex processes stopped after $elapsed second(s)."
+            return
+        }
+
+        # Last resort: force the remaining processes to stop.
+        if ($waitSec -gt 0) {
+            Write-LogWarning "Plex did not close within $waitSec seconds. Forcing these processes to stop:"
+        } else {
+            Write-LogWarning "Forcing these processes to stop:"
+        }
+        foreach ($process in $running) {
+            Write-LogWarning "$($process.Name) (PID $($process.Id))" -Indent 1
+
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            }
+            catch {
+                # The process may have exited on its own in the meantime.
+                Write-LogWarning "Could not stop PID $($process.Id): $(FormatError $_)" -Indent 2
+                $Error.Clear()
+            }
+        }
+
+        # Give Windows a few seconds to clean up, then verify.
+        $forceWaitSec = 10
+        for ($i = 0; $i -lt $forceWaitSec; $i++) {
+            Start-Sleep -Seconds 1
+            $running = @(GetPlexProcesses $installDir)
+
+            if ($running.Count -eq 0) {
+                break
+            }
+        }
+
+        if ($running.Count -gt 0) {
+            throw "Plex processes are still running after a forced stop: " +
+                "$(FormatProcessList $running). " +
+                "Cancelling so that an in-use Plex database is not copied."
+        }
+
+        Write-LogWarning "All Plex processes stopped after a forced stop."
     }
     finally {
         WriteDebug "Exiting StopPlexMediaServer."
@@ -3926,12 +4010,6 @@ function ProcessBackup {
             }
 
             # Stop all running Plex services and Plex process.
-			if ( Stop-PlexMediaServer ) {
-				Write-Host "Stopped Plex Successfully"
-			} else {
-				Write-Host "Error: Could not stop Plex."
-			}
-			
             $success, $plexServices = StopPlexServices $plexServices
 
             if (!$success) {
