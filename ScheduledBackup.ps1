@@ -1,0 +1,1 @@
+start powershell.exe -noprofile -executionpolicy bypass -file .\PlexBackup.ps1 -ConfigFile .\PlexBackup.ps1.json
