@@ -2910,6 +2910,7 @@ function MoveFolder {
         Write-LogWarning "Skipping."
 
         WriteDebug "Exiting MoveFolder."
+        return
     }
 
     Write-LogInfo "Moving:"
@@ -2923,9 +2924,9 @@ function MoveFolder {
         try {
             if (!$Script:Test) {
                 if ($Script:Quiet -or (!$Script:RawOutput)) {
-                    robocopy "$source" "$target" *.* /e /is /it *>&1 | Out-Null
+                    robocopy "$source" "$target" *.* /e /is /it /move *>&1 | Out-Null
                 } else {
-                    robocopy "$source" "$target" *.* /e /is /it
+                    robocopy "$source" "$target" *.* /e /is /it /move
                 }
             }
         }
@@ -2937,7 +2938,7 @@ function MoveFolder {
         if ($LASTEXITCODE -gt 7) {
             throw "Robocopy failed with error code $LASTEXITCODE. " +
                 "To troubleshoot, execute the following command: " +
-                "robocopy '$source' '$target' *.* /e /is /it"
+                "robocopy '$source' '$target' *.* /e /is /it /move"
         }
 
         Write-LogInfo "Completed at:"
@@ -2950,7 +2951,7 @@ function MoveFolder {
 
 #--------------------------------------------------------------------------
 # CopyFolder
-#   Moves contents of a folder using a ROBOCOPY command.
+#   Copies contents of a folder using a ROBOCOPY command.
 function CopyFolder {
     param (
         [string]
@@ -2980,9 +2981,9 @@ function CopyFolder {
         try {
             if (!$Script:Test) {
                 if ($Script:Quiet -or (!$Script:RawOutput)) {
-                    robocopy "$source" "$target" *.* /e /is /it /move *>&1 | Out-Null
+                    robocopy "$source" "$target" *.* /e /is /it *>&1 | Out-Null
                 } else {
-                    robocopy "$source" "$target" *.* /e /is /it /move
+                    robocopy "$source" "$target" *.* /e /is /it
                 }
             }
         }
@@ -2993,8 +2994,8 @@ function CopyFolder {
 
         if ($LASTEXITCODE -gt 7) {
             throw "Robocopy failed with error code $LASTEXITCODE. " +
-                "To troubleshoot, execute the following command: "
-                "robocopy '$source' '$target' *.* /e /is /it /move"
+                "To troubleshoot, execute the following command: " +
+                "robocopy '$source' '$target' *.* /e /is /it"
         }
 
         Write-LogInfo "Completed at:"
