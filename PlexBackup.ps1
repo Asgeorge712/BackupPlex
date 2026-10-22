@@ -24,6 +24,7 @@ The script backs up the contents of the 'Plex Media Server' folder (app data fol
 - Crash Reports
 - Updates
 - Logs
+- Cache
 
 The backup process compresses the contents Plex app data folders to the ZIP files (with the exception of folders containing subfolders and files with really long paths). For efficiency reasons, the script first compresses the data in a temporary folder and then copies the compressed (ZIP) files to the backup destination folder. You can compress data to the backup destination folder directly (bypassing the saving to the temp folder step) by setting the value of the $TempZipFileDir variable to null or empty string. Folders holding subfolders and files with very long paths get special treatment: instead of compressing them, before performing the backup, the script moves them to the backup folder as-is, and after the backup, it copies them to their original locations. Alternatively, backup can create a mirror of the essential app data folder via the Robocopy command (to use this option, set the -Robocopy switch).
 
@@ -543,11 +544,13 @@ param (
 #---------------[ VARIABLES CONFIGURABLE VIA CONFIG FILE ]-----------------
 
 # The following Plex application folders do not need to be backed up.
+# Cache holds data Plex regenerates on its own (e.g. resized artwork).
 $ExcludeDirs = @(
     "Diagnostics",
     "Crash Reports",
     "Updates",
-    "Logs"
+    "Logs",
+    "Cache"
 )
 
 # The following file types do not need to be backed up:
