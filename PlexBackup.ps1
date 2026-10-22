@@ -163,6 +163,9 @@ Specifies the wait time between retries in seconds (corresponds to the Robocopy 
 .PARAMETER StopTimeoutSec
 How many seconds to wait for Plex Media Server and its helper processes to close gracefully before forcing them to stop. Default: 60.
 
+.PARAMETER StartTimeoutSec
+How many seconds to wait for Plex Media Server to be running after it is restarted. Default: 30.
+
 .PARAMETER RawOutput
 Set this switch to display raw output from the external commands, such as Robocopy or 7-zip.
 
@@ -454,6 +457,10 @@ param (
     [ValidateRange(1,[int]::MaxValue)]
     [int]
     $StopTimeoutSec = 60,
+
+    [ValidateRange(1,[int]::MaxValue)]
+    [int]
+    $StartTimeoutSec = 30,
 
     [switch]
     $RawOutput,
@@ -2159,27 +2166,6 @@ function SavePlexVersion {
 }
 
 
-#---------------------------------------------------------------------------
-# Start-PlexMediaServer
-# Start the Plex Media Server Process
-function Start-PlexMediaServer {
-    $plexPath = "C:\Program Files\Plex\Plex Media Server\Plex Media Server.exe"
-    if (Test-Path $plexPath) {
-        try {
-            Start-Process -FilePath $plexPath -ErrorAction Stop
-            return $true
-        } catch {
-            Write-Host "Failed to start Plex Media Server: $_"
-            return $false
-        }
-    } else {
-        Write-Host "Plex Media Server executable not found at: $plexPath"
-        return $false
-    }
-}
-
-
-
 #--------------------------------------------------------------------------
 # GetPlexServices
 #   Returns the list of Plex Windows services (identified by display names).
@@ -2433,54 +2419,132 @@ function StopPlexMediaServer {
 }
 
 #--------------------------------------------------------------------------
+# WaitForPlexMediaServer
+#   Waits up to the specified number of seconds for the Plex Media Server
+#   process to be running. Returns the process if it is, or $null.
+function WaitForPlexMediaServer {
+    param (
+        [int]
+        $timeoutSec
+    )
+
+    for ($i = 0; $i -lt $timeoutSec; $i++) {
+        Start-Sleep -Seconds 1
+
+        $process = Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -eq $Script:PlexServerPath } |
+                Select-Object -First 1
+
+        if ($process) {
+            return $process
+        }
+    }
+
+    return $null
+}
+
+#--------------------------------------------------------------------------
+# AddErrorResult
+#   Records an error message for the final result (and email) without
+#   losing an error that was already recorded.
+function AddErrorResult {
+    param (
+        [string]
+        $message
+    )
+
+    if ($Script:ErrorResult) {
+        $Script:ErrorResult += " $message"
+    } else {
+        $Script:ErrorResult = $message
+    }
+}
+
+#--------------------------------------------------------------------------
 # StartPlexMediaServer
-#   Launches Plex Media Server.
+#   Launches Plex Media Server (non-elevated if possible) and verifies that
+#   it is running.
 function StartPlexMediaServer {
     [CmdletBinding()]
     param (
     )
     WriteDebug "Entered StartPlexMediaServer."
 
-    if ($Script:PlexServerPath) {
-        Write-Verbose "Checking if Plex Media Server is already running."
+    try {
+        if (!$Script:PlexServerPath) {
+            Write-LogWarning "Plex Media Server path is unknown, so it cannot be started."
+            return
+        }
 
-        # Get name of the Plex Media Server executable (just to see if it is running).
-        $exeFileName = Get-Process |
-            Where-Object {$_.Path -match $Script:PlexServerFileName + "$" } |
-                Select-Object -ExpandProperty Name
+        $process = Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -eq $Script:PlexServerPath } |
+                Select-Object -First 1
 
-        # Start Plex Media Server executable (if it is not running).
-        if ($exeFileName) {
-            Write-Verbose "Plex Media Server is already running."
-        } else {
-            Write-Verbose "Plex Media Server is not running."
+        if ($process) {
+            Write-LogInfo "Plex Media Server is already running (PID $($process.Id))."
+            return
+        }
 
-            Write-LogInfo "Starting Plex Media Server:"
-            Write-LogInfo $Script:PlexServerPath -Indent 1
+        Write-LogInfo "Starting Plex Media Server (non-elevated):"
+        Write-LogInfo $Script:PlexServerPath -Indent 1
 
-            try {
-                # Try to restart Plex not as Administrator.
-                # Starting it as Administrator seems to mess up share mappings.
-                # https://stackoverflow.com/questions/20218076/batch-file-drop-elevated-privileges-run-a-command-as-original-user
+        try {
+            # Start Plex not as Administrator: starting it elevated can break
+            # mapped network drives and share access.
+            # https://stackoverflow.com/questions/20218076/batch-file-drop-elevated-privileges-run-a-command-as-original-user
+            if ($Script:Machine) {
+                $output = cmd /c "runas /machine:$Script:Machine /trustlevel:0x20000 `"$Script:PlexServerPath`" 2>&1"
+            } else {
+                $output = cmd /c "runas /trustlevel:0x20000 `"$Script:PlexServerPath`" 2>&1"
+            }
 
-                # Start-Process $plexServerExePath -LoadUserProfile
-                if (($null -eq $Script:Machine) -or ($Script:Machine -eq "")) {
-                    runas /trustlevel:0x20000 "$Script:PlexServerPath"
-                } else {
-                    runas /machine:$Script:Machine /trustlevel:0x20000 "$Script:PlexServerPath"
+            if ($LASTEXITCODE -ne 0) {
+                Write-LogWarning "runas returned exit code $($LASTEXITCODE):"
+                $output = ($output | Out-String).Trim()
+                if ($output) {
+                    Write-LogWarning $output -Indent 1
                 }
-             }
-            catch {
-                Write-LogError "Failed to start Plex Media Server '$($service.DisplayName)'."
-                WriteLogException $_
-
-                $Error.Clear()
-                # Non-critical error; can continue.
             }
         }
-    }
+        catch {
+            Write-LogWarning "runas failed: $(FormatError $_)"
+            $Error.Clear()
+        }
 
-    WriteDebug "Exiting StartPlexMediaServer."
+        Write-LogInfo "Waiting up to $($Script:StartTimeoutSec) seconds for Plex Media Server to start."
+        $process = WaitForPlexMediaServer $Script:StartTimeoutSec
+
+        if ($process) {
+            Write-LogInfo "Plex Media Server is running (PID $($process.Id))."
+            return
+        }
+
+        # Fallback: start it directly. This runs Plex with the same (elevated)
+        # rights as this script, which can affect mapped network drives.
+        Write-LogWarning ("Plex Media Server did not start within $($Script:StartTimeoutSec) seconds. " +
+            "Trying a direct (elevated) start.")
+
+        try {
+            Start-Process -FilePath $Script:PlexServerPath -ErrorAction Stop
+        }
+        catch {
+            Write-LogError "Direct start failed: $(FormatError $_)"
+            $Error.Clear()
+        }
+
+        $process = WaitForPlexMediaServer $Script:StartTimeoutSec
+
+        if ($process) {
+            Write-LogWarning "Plex Media Server is running elevated (PID $($process.Id))."
+        } else {
+            $msg = "Plex Media Server failed to restart. Please start it manually."
+            Write-LogError $msg
+            AddErrorResult $msg
+        }
+    }
+    finally {
+        WriteDebug "Exiting StartPlexMediaServer."
+    }
 }
 
 #--------------------------------------------------------------------------
@@ -4104,11 +4168,6 @@ function ProcessBackup {
             # (do not restart after failed restore).
             if ((!$Script:NoRestart) -and
                 ($success -or $Script:Mode -ne $MODE_RESTORE)) {
-				if (Start-PlexMediaServer) {
-					Write-Host "Started Plex successfully."
-				} else {
-					Write-Host "Could not start Plex."
-				}
                 StartPlexServices $plexServices
                 StartPlexMediaServer
             }
