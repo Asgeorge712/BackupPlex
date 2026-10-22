@@ -1,4 +1,5 @@
-# PlexBackup (customized)
+# BackupPlex
+A Plex Backup program - improved
 
 Backs up and restores Plex Media Server app data and registry keys on Windows.
 
