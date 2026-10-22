@@ -3532,8 +3532,6 @@ function SetUpBackupFolder {
         Write-LogInfo "Backup will be saved in:"
         Write-LogInfo $Script:BackupDir -Indent 1
 
-        PurgeOldBackups
-
         if (!(Test-Path -Path $Script:BackupDir -PathType Container)) {
             # Create new backup folder.
             try {
@@ -3733,6 +3731,10 @@ function Backup {
                     $_.Exception))
             }
         }
+
+        # Only delete old backups once this backup has completed successfully,
+        # so failed runs never cost us a good backup.
+        PurgeOldBackups
     }
     finally {
         WriteDebug "Exiting Backup."
