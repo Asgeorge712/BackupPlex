@@ -6,8 +6,10 @@ Backs up or restores Plex application data files and registry keys on a Windows 
 
 .DESCRIPTION
 
-PAULS Manual Command
-C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -file "D:\BackupPlex\PlexBackup.ps1" -SendMail Always -Keep 2 -Log -LogLevel Info  -CredentialFile "D:\BackupPlex\cred-file.xml" -smtpServer smtp.gmail.com  -Port 587 -From paul@paulgeorge.com -To paul@paulgeorge.com 
+PAULS Manual Command (run from an admin PowerShell window)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\BackupPlex\PlexBackup.ps1" -SendLogFile Always -SendMail Always -Keep 3 -LogFile "D:\BackupPlex\PlexBackup.log" -ErrorLogFile "D:\BackupPlex\PlexBackup.err.log" -LogLevel Info -CredentialFile "D:\BackupPlex\gmail_cred.xml" -SmtpServer smtp.gmail.com -Port 587 -From paul@paulgeorge.com -To paul@paulgeorge.com
+
+Settings in PlexBackup.ps1.json (if present) override the command line.
 
 
 The script can run in these modes:
@@ -27,7 +29,7 @@ The backup process compresses the contents Plex app data folders to the ZIP file
 
 In addition to backing up Plex app data, the script also backs up the contents of the Plex Windows Registry key.
 
-The backup is created in the specified backup folder under a subfolder which name reflects the script start time. It deletes the old backup folders (you can specify the number of old backup folders to keep).
+The backup is created in the specified backup folder under a subfolder which name reflects the script start time. After a successful backup, it deletes the old backup folders (you can specify the number of old backup folders to keep). Old backups are never deleted when a backup fails.
 
 If the backup process does not complete due to error, you can run backup in the Continue mode (using the '-Mode Continue' command-line switch) and it will resume from where it left off. By default, the script picks up the most recent backup folder, but you can specify the backup folder using the -BackupDirPath command-line switch.
 
@@ -133,13 +135,13 @@ Specifies the log level of the output:
 - Debug
 
 .PARAMETER Log
-When set to true, informational messages will be written to a log file. The default log file will be created in the backup folder and will be named after this script with the '.log' extension, such as 'PlexBackup.ps1.log'.
+When set to true, informational messages will be written to a log file. The default log file will be created in the timestamped backup folder and will be named after the operation mode, such as 'Backup.log' or 'Restore.log'. Because old backup folders are deleted (see -Keep), use -LogFile to keep logs in a fixed location.
 
 .PARAMETER LogFile
 Use this switch to specify a custom log file location. When this parameter is set to a non-null and non-empty value, the '-Log' switch can be omitted.
 
 .PARAMETER ErrorLog
-When set to true, error messages will be written to an error log file. The default error log file will be created in the backup folder and will be named after this script with the '.err.log' extension, such as 'PlexBackup.ps1.err.log'.
+When set to true, error messages will be written to an error log file. The default error log file will be created in the timestamped backup folder and will be named after the operation mode, such as 'Backup.err.log'.
 
 .PARAMETER ErrorLogFile
 Use this switch to specify a custom error log file location. When this parameter is set to a non-null and non-empty value, the '-ErrorLog' switch can be omitted.
@@ -221,10 +223,11 @@ Path to the file holding username and encrypted password of the account that has
 
   Get-Credential | Export-CliXml -Path "PathToFile.xml"
 
-The default log file will be created in the backup folder and will be named after this script with the '.xml' extension, such as 'PlexBackup.ps1.xml'.
+For Gmail, enter your Gmail address as the user name and a Gmail app password (not your regular password) as the password.
 
+The password is encrypted for the Windows account and computer that create the file, so create it while logged on as the same account that runs the backup (including from a scheduled task); otherwise the script cannot read it.
 
-plexbackup -EmailCreateCredentialFile -Username "paul@paulgeorge.com" -Password "YOUR_APP_PASSWORD" -Output "D:\BackupPlex\credfile.xml"
+If this parameter is not specified, the script uses a file named after the script with the '.xml' extension in the script folder, such as 'PlexBackup.ps1.xml'.
 
 
 
