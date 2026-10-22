@@ -13,13 +13,18 @@ Based on [alekdavis/PlexBackup](https://github.com/alekdavis/PlexBackup) v2.1.9 
 Run from an **admin** PowerShell window:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\BackupPlex\PlexBackup.ps1" -SendLogFile Always -SendMail Always -Keep 3 -LogFile "D:\BackupPlex\PlexBackup.log" -ErrorLogFile "D:\BackupPlex\PlexBackup.err.log" -LogLevel Info -CredentialFile "D:\BackupPlex\gmail_cred.xml" -SmtpServer smtp.gmail.com -Port 587 -From paul@paulgeorge.com -To paul@paulgeorge.com
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\BackupPlex\PlexBackup.ps1" -CredentialFile "D:\BackupPlex\gmail_cred.xml" -From paul@paulgeorge.com -To paul@paulgeorge.com
 ```
 
-Settings in `PlexBackup.ps1.json` (if present) override the command line.
+The scheduled task uses the same arguments.
+
+## Settings
+
+All non-sensitive settings live in `PlexBackup.ps1.json` (7-Zip, backup folder, keep 3, email always with the log attached, SMTP server). The credential file and email addresses are passed on the command line instead.
+
+Parameters given on the command line take precedence over the JSON file; the JSON only fills in parameters that are not on the command line.
 
 ## Not in the repo
 
 - `*.xml` credential files: create with `Get-Credential | Export-CliXml -Path "D:\BackupPlex\gmail_cred.xml"` (Gmail app password as the password)
-- `PlexBackup.ps1.json` local config
 - Backups, logs and downloaded modules

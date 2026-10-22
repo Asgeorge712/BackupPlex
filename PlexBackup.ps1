@@ -6,10 +6,10 @@ Backs up or restores Plex application data files and registry keys on a Windows 
 
 .DESCRIPTION
 
-PAULS Manual Command (run from an admin PowerShell window)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\BackupPlex\PlexBackup.ps1" -SendLogFile Always -SendMail Always -Keep 3 -LogFile "D:\BackupPlex\PlexBackup.log" -ErrorLogFile "D:\BackupPlex\PlexBackup.err.log" -LogLevel Info -CredentialFile "D:\BackupPlex\gmail_cred.xml" -SmtpServer smtp.gmail.com -Port 587 -From paul@paulgeorge.com -To paul@paulgeorge.com
+PAULS Manual Command (run from an admin PowerShell window; same arguments as the scheduled task)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\BackupPlex\PlexBackup.ps1" -CredentialFile "D:\BackupPlex\gmail_cred.xml" -From paul@paulgeorge.com -To paul@paulgeorge.com
 
-Settings in PlexBackup.ps1.json (if present) override the command line.
+All other settings come from PlexBackup.ps1.json. Parameters given on the command line take precedence over the config file.
 
 
 The script can run in these modes:
@@ -42,7 +42,7 @@ To override the default script settings, modify the values of script parameters 
 
 The script can send an email notification on the operation completion.
 
-The config file must use the JSON format. Not every script variable can be specified in the config file (for the list of overridable variables, see the sample config file). Only non-null values from config file will be used. The default config file is named after the running script with the '.json' extension, such as: PlexBackup.ps1.json. You can specify a custom config file via the -ConfigFile command-line switch. Config file is optional. All config values in the config file are optional. The non-null config file settings override the default and command-line paramateres, e.g. if the command-line -Mode switch is set to 'Backup' and the corresponding element in the config file is set to 'Restore' then the script will run in the Restore mode.
+The config file must use the JSON format. Not every script variable can be specified in the config file (for the list of overridable variables, see the sample config file). Only non-null values from config file will be used. The default config file is named after the running script with the '.json' extension, such as: PlexBackup.ps1.json. You can specify a custom config file via the -ConfigFile command-line switch. Config file is optional. All config values in the config file are optional. Non-null config file settings override the script's default values, but not parameters specified on the command line: a parameter passed on the command line always takes precedence over the config file, e.g. if the command-line -Mode switch is set to 'Backup' and the corresponding element in the config file is set to 'Restore' then the script will run in the Backup mode.
 
 On success, the script will set the value of the $LASTEXITCODE variable to 0; on error, it will be greater than zero.
 
