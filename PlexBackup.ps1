@@ -2288,49 +2288,6 @@ function StartPlexServices {
 
 
 #--------------------------------------------------------------------------
-# StopPlexMon
-#   Stops the Plex Monitor
-function StopPlexMon {
-    param()
-	Import-Module ScheduledTasks -ErrorAction Continue
-
-    $taskName = "PlexMonitor"
-
-    try {
-        if (Get-ScheduledTask -TaskName $taskName -ErrorAction Stop) {
-            Write-Output "Stopping scheduled task '$taskName'..."
-            Stop-ScheduledTask -TaskName $taskName
-            Write-Output "Task stopped."
-        }
-    }
-    catch {
-        Write-Warning "Could not find or stop the scheduled task: $taskName. $_"
-    }
-}
-
-#--------------------------------------------------------------------------
-# StartPlexMon
-#   Starts the Plex Monitor
-function StartPlexMon {
-    param()
-	Import-Module ScheduledTasks -ErrorAction Continue
-
-    $taskName = "PlexMonitor"
-
-    try {
-        if (Get-ScheduledTask -TaskName $taskName -ErrorAction Stop) {
-            Write-Output "Starting scheduled task '$taskName'..."
-            Start-ScheduledTask -TaskName $taskName
-            Write-Output "Task started."
-        }
-    }
-    catch {
-        Write-Warning "Could not find or start the scheduled task: $taskName. $_"
-    }
-}
-
-
-#--------------------------------------------------------------------------
 # StopPlexMediaServer
 #   Stops a running instance of Plex Media Server.
 function StopPlexMediaServer {
@@ -3983,7 +3940,6 @@ function ProcessBackup {
 
             $success = $false
 
-			StopPlexMon
             StopPlexMediaServer
 
             if ($Script:Mode -eq $MODE_RESTORE) {
@@ -4077,7 +4033,6 @@ function ProcessBackup {
 				}
                 StartPlexServices $plexServices
                 StartPlexMediaServer
-				StartPlexMon
             }
         }
     }
