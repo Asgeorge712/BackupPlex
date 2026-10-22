@@ -1260,10 +1260,10 @@ function Prologue {
     }
 
     Write-LogInfo "Running as:"
-    Write-LogInfo $Script:StartTime -Indent 1
+    Write-LogInfo $env:UserName -Indent 1
 
     Write-LogInfo "Script started at:"
-    Write-LogInfo $env:UserName -Indent 1
+    Write-LogInfo $Script:StartTime -Indent 1
 
     # Get script
     $scriptArgs = GetCommandLineArgs
@@ -1623,7 +1623,7 @@ function InitMail {
             Write-Verbose "Will not send email notification because SMTP server is not specified."
         }
 
-        WriteDebug "Exiting InitSmtp."
+        WriteDebug "Exiting InitMail."
         return
     }
 
@@ -3050,7 +3050,7 @@ function BackupSpecialFolders {
             }
             catch {
                 throw (New-Object System.Exception(
-                    "Error moving '$source' to '$tartget'.", $_.Exception))
+                    "Error moving '$source' to '$target'.", $_.Exception))
             }
         }
     }
@@ -3099,7 +3099,7 @@ function RestoreSpecialFolders {
                 }
                 catch {
                     throw (New-Object System.Exception(
-                        "Error copying '$source' to '$tartget'.", $_.Exception))
+                        "Error copying '$source' to '$target'.", $_.Exception))
                 }
             }
         }
@@ -3934,7 +3934,7 @@ function DecompressFiles {
         }
     }
     finally {
-        WriteDebug "Exiting CompressFiles."
+        WriteDebug "Exiting DecompressFiles."
     }
 }
 
@@ -4167,7 +4167,7 @@ function ProcessBackup {
             $Script:Duration = (New-TimeSpan -Start $Script:StartTime `
                 -End $Script:EndTime).ToString("hh\:mm\:ss\.fff")
 
-            # Resturn Plex unless instructed to do otherwise
+            # Restart Plex unless instructed to do otherwise
             # (do not restart after failed restore).
             if ((!$Script:NoRestart) -and
                 ($success -or $Script:Mode -ne $MODE_RESTORE)) {
