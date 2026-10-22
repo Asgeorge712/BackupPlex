@@ -85,12 +85,13 @@ Shortcut for '-Mode Continue'.
 Shortcut for '-Mode Restore'.
 
 .PARAMETER Type
-Specifies the non-default type of backup method:
+Specifies the type of backup method:
 
-- 7zip
-- Robocopy
+- 7zip (default): compresses with the 7-zip command-line tool (7z.exe, see -ArchiverPath)
+- Zip: compresses with PowerShell's built-in Compress-Archive (slower, does not apply the file exclusions, and cannot handle files over 2 GB)
+- Robocopy: mirrors the folders without compression
 
-By default, the script will use the built-in compression.
+A backup must be restored with the same type it was created with, e.g. to restore an older .zip backup, use '-Restore -Type Zip'.
 
 .PARAMETER SevenZip
 Shortcut for '-Type 7zip'
@@ -376,7 +377,7 @@ param (
     [Parameter(Mandatory, ParameterSetName="BackupType")]
     [Parameter(Mandatory, ParameterSetName="ContinueType")]
     [Parameter(Mandatory, ParameterSetName="RestoreType")]
-    [ValidateSet("", "7zip", "Robocopy")]
+    [ValidateSet("", "7zip", "Zip", "Robocopy")]
     [string]
     $Type = "",
 
@@ -645,6 +646,7 @@ $MODE_RESTORE   = "Restore"
 # Backup types.
 $TYPE_ROBOCOPY = "Robocopy"
 $TYPE_7ZIP     = "7zip"
+$TYPE_ZIP      = "Zip"
 
 # Backup folder format: YYYYMMDDhhmmss
 $REGEX_BACKUPDIRNAMEFORMAT = "^\d{14}$"
@@ -1370,6 +1372,17 @@ function InitGlobals {
     }
     elseif ($Script:SevenZip) {
         $Script:Type = $TYPE_7ZIP
+    }
+    elseif (!$Script:Type) {
+        # 7-zip is the default: it is faster than the built-in compression,
+        # honors $ExcludeFiles, and handles large files and long paths.
+        $Script:Type = $TYPE_7ZIP
+    }
+
+    # 'Zip' selects the built-in compression, which the rest of the script
+    # identifies by an empty type.
+    if ($Script:Type -eq $TYPE_ZIP) {
+        $Script:Type = ""
     }
 
     # For 7-zip archival, change default '.zip' extension to '.7z'.
@@ -3480,7 +3493,8 @@ function SetUpBackupFolder {
 
     try {
         # Verify that temp folder exists (if specified).
-        if ($Script:Type -ne $TYPE_7ZIP) {
+        # Both the built-in and 7-zip compression stage archives there.
+        if ($Script:Type -ne $TYPE_ROBOCOPY) {
             if ($Script:TempDir) {
                 # Make sure temp folder exists.
                 if (!(Test-Path -Path $Script:TempDir -PathType Container)) {
@@ -3500,10 +3514,15 @@ function SetUpBackupFolder {
                 }
 
                 if (!$Script:Test) {
-                    $tempFileMask = $BACKUP_FILENAME + "*$Script:ZipFileExt"
+                    # Leftover staged archives are named Plex<GUID>.zip or Plex<GUID>.7z.
+                    $tempFileMask  = $BACKUP_FILENAME + "*$Script:ZipFileExt"
+                    $tempFileRegex = "^" + $BACKUP_FILENAME +
+                        "[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}" +
+                        [regex]::Escape($Script:ZipFileExt) + "$"
 
                     Write-Verbose "Purging '$tempFileMask' from '$Script:TempDir'."
-                    Get-ChildItem -Path $Script:TempDir -Include $tempFileMask |
+                    Get-ChildItem -Path $Script:TempDir -Filter $tempFileMask -File |
+                        Where-Object { $_.Name -match $tempFileRegex } |
                             Remove-Item -Force | Out-Null
                 }
             }
@@ -4042,7 +4061,7 @@ function ProcessBackup {
         if ($Script:Type) {
             Write-LogInfo $Script:Type.ToUpper() -Indent 1
         } else {
-            Write-LogInfo "DEFAULT" -Indent 1
+            Write-LogInfo "ZIP (BUILT-IN)" -Indent 1
         }
 
         if ($Script:PlexVersion) {
