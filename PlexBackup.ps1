@@ -4111,7 +4111,7 @@ function ProcessBackup {
             }
             catch {
                 Write-LogError "Error calculating backup statistics."
-                Write-LogException $_
+                WriteLogException $_
                 $Error.Clear()
             }
 
